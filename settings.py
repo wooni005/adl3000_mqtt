@@ -3,7 +3,7 @@ import logging
 MQTT_ServerIP     = "192.168.5.248"
 MQTT_ServerPort   = 1883
 
-serialPortDevice  = '/dev/ttyUSB0'
+serialPortDevice  = '/dev/ttyUSB1'
 serialPortBaudrate = 9600
 tcpipServerAddress = ('192.168.5.225', 4001)
 LOG_FILENAME      = "/home/pi/log/adl3000_mqtt.log"
