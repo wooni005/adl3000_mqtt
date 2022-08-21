@@ -4,7 +4,7 @@ After=syslog.target network.target mosquitto.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/scripts/python/adl3000_mqtt/adl3000_mosa_mqtt.py
+ExecStart=/usr/bin/python3 /home/pi/scripts/python/adl3000_mqtt/adl3000_modbus_mqtt.py
 User=pi
 Restart=always
 RestartSec=2s

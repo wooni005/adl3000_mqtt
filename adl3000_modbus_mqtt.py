@@ -153,7 +153,7 @@ def serialPortThread(serialPortDeviceName, serialPort):
                     msgLen = 51 # 59-8
                 elif msgLen == 8:
                     # Received the command to the ADL3000 meter: ignore this
-                    print("8 - ", end='')
+                    # print("8 - ", end='')
                     continue
                 else:
                     # Unknown msgLen
@@ -343,7 +343,7 @@ def print_time(delay):
 ###
 # Initalisation ####
 ###
-# logger.initLogger(settings.LOG_FILENAME)
+logger.initLogger(settings.LOG_FILENAME)
 
 # Init signal handler, because otherwise Ctrl-C does not work
 signal.signal(signal.SIGINT, signal_handler)
