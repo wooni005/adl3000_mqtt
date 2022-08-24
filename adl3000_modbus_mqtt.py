@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-from logging import debug
 import os
 import sys
 import signal
@@ -22,31 +21,35 @@ import logger
 import serviceReport
 
 sendQueue = Queue(maxsize=0)
-current_sec_time = lambda: int(round(time.time()))
-usleep = lambda x: time.sleep(x / 1000000.0)
+exitThread = False
 
-exit = False
-serialPort = None
+
+def current_sec_time():
+    return int(round(time.time()))
+
+
+def usleep(uSeconds):
+    return time.sleep(uSeconds / 1000000.0)
 
 
 def signal_handler(_signal, frame):
-    global exit
+    global exitThread
 
     print('You pressed Ctrl+C!')
-    exit = True
+    exitThread = True
 
 
-def printHexString(str):
-    for char in str:
+def printHexString(_str):
+    for char in _str:
         print("%02X " % (ord(char)), end='')
     print()
 
 
-def printHexByteString(recvMsg):
-    for x in recvMsg:
+def printHexByteString(_str):
+    for x in _str:
         print("%02X " % x, end='')
     print()
-    # print(" msg length: %d" % len(recvMsg))
+    # print(" msg length: %d" % len(_str))
 
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -58,27 +61,27 @@ def on_connect(client, userdata, flags, rc):
         print(("ERROR: MQTT Client connected with result code %s " % str(rc)))
 
 
-# The callback for when a PUBLISH message is received from the server
-def on_message(client, userdata, msg):
+# The callback for when a published message is received from the server
+def on_message(_client, userdata, msg):
     print(('ERROR: Received ' + msg.topic + ' in on_message function' + str(msg.payload)))
 
 
-def on_message_homelogic(client, userdata, msg):
-    #print(msg.topic + " " + str(msg.payload))
+def on_message_homelogic(_client, userdata, msg):
+    # print(msg.topic + " " + str(msg.payload))
     topics = msg.topic.split("/")
 
-    deviceName = topics[2] #huis/RFXtrx/KaKu-12/out
-    cmnd = deviceName.split("-") #KaKu-12
+    deviceName = topics[2]  # huis/RFXtrx/KaKu-12/out
+    cmnd = deviceName.split("-")  # KaKu-12
 
     # KaKu-12
     if cmnd[0] == "KaKu":
-        #print("Activate KaKu WCD: %s" % cmnd[1])
+        # print("Activate KaKu WCD: %s" % cmnd[1])
         # setKaKu(int(cmnd[1]), msg.payload)
         pass
 
 
 def openSerialPort():
-    global exit
+    global exitThread
     try:
         ser = serial.Serial(port=settings.serialPortDevice,  # port='/dev/ttyACM0',
                             baudrate=settings.serialPortBaudrate,
@@ -88,7 +91,7 @@ def openSerialPort():
                             timeout=1)  # 1=1sec 0=non-blocking None=Blocked
 
         if ser.isOpen():
-            print(("rflink_mqtt: Successfully connected to serial port %s" % (settings.serialPortDevice)))
+            print(("rflink_mqtt: Successfully connected to serial port %s" % settings.serialPortDevice))
 
         return ser
 
@@ -97,39 +100,38 @@ def openSerialPort():
         print("%s" % str(arg))
         # traceback.print_exc()
 
-        #Report failure to Home Logic system check
-        serviceReport.sendFailureToHomeLogic(serviceReport.ACTION_NOTHING, 'Serial port open failure on port %s, wrong port or USB cable missing' % (settings.serialPortDevice))
+        # Report failure to Home Logic system check
+        serviceReport.sendFailureToHomeLogic(serviceReport.ACTION_NOTHING, 'Serial port open failure on port %s, wrong port or USB cable missing' % settings.serialPortDevice)
 
         # Suppress restart loops
-        time.sleep(900) # 15 min
-        exit = True
+        time.sleep(900)  # 15 min
+        exitThread = True
 
 
 def closeSerialPort(ser):
     ser.close()
 
 
-def serialPortThread(serialPortDeviceName, serialPort):
-    global exit
-    global checkMsg
+def serialPortThread(serialPortDeviceName, _serialPort):
+    global exitThread
 
     # Wait a while, the OS is probably testing what kind of device is there
     # with sending 'ATEE' commands and others
     time.sleep(2)
-    serialPort.reset_input_buffer()
+    _serialPort.reset_input_buffer()
 
-    # Ask for board Id
+    # Ask for the board ID
     print("serialPortThread started")
-    serialPort.setRTS(0) # Disable RS485 send
-    powerCntAdd = 1000 # Send power directly
+    _serialPort.setRTS(0)  # Disable RS485 send
+    powerCntAdd = 1000  # Send power directly
     powerAvgAdd = 0
     powerAvgSend = 0
     lastFeedInMode = None
 
-    while not exit:
+    while not exitThread:
         try:
-            if serialPort.isOpen():
-                recvMsg = serialPort.read(110)
+            if _serialPort.isOpen():
+                recvMsg = _serialPort.read(110)
                 # "".join([chr(i) for i in recvMsgWithoutCRC])
             else:
                 recvMsg = ""
@@ -150,7 +152,7 @@ def serialPortThread(serialPortDeviceName, serialPort):
                     # print("59 - ", end='')
                     recvMsg = recvMsg[8:]
                     # Correct the msgLen with - 8
-                    msgLen = 51 # 59-8
+                    msgLen = 51  # 59-8
                 elif msgLen == 8:
                     # Received the command to the ADL3000 meter: ignore this
                     # print("8 - ", end='')
@@ -161,14 +163,14 @@ def serialPortThread(serialPortDeviceName, serialPort):
                     # print("U")
                     continue
 
-                # Check the receive msg CRC
+                # Check the received msg CRC
                 if not modbus.checkRecvMsgCRC(recvMsg):
                     # print(" - Wrong CRC")
                     # printHexByteString(recvMsg)
                     continue
 
                 # Check msgLen (+5 bytes=modBusAddr,Cmnd,dataLength,CRChigh,CRClow)
-                if msgLen != (recvMsg[2] + 5):
+                if msgLen != (int(recvMsg[2]) + 5):
                     # print("Wrong msgLen!", end='')
                     # printHexByteString(recvMsg)
                     continue
@@ -232,7 +234,7 @@ def serialPortThread(serialPortDeviceName, serialPort):
 
                 # 0x6A:21+22: 2 bytes: total active power (0.00kW)
                 i = 21
-                powerTotal = int(struct.unpack(">h", recvMsg[i:i + 2])[0]) #
+                powerTotal = int(struct.unpack(">h", recvMsg[i:i + 2])[0])
                 # print("Ptot: %d W  " % powerTotal)
 
                 sensorData['Ptot'] = powerTotal
@@ -241,7 +243,7 @@ def serialPortThread(serialPortDeviceName, serialPort):
                 powerAvgAdd += powerTotal
                 powerCntAdd += 1
                 powerAvg = powerAvgAdd / powerCntAdd
-                powerAvgDiff = abs(powerAvg / 2) # 25% of powerTotal
+                powerAvgDiff = abs(powerAvg / 2)  # 25% of powerTotal
                 # print("powerAvgDiff: %d" % powerAvgDiff)
                 if (feedInMode != lastFeedInMode) or (powerCntAdd >= 7) or (powerTotal > (powerAvg + powerAvgDiff)) or (powerTotal < (powerAvg - powerAvgDiff)):
                     powerAvgSend = powerAvg
@@ -280,21 +282,20 @@ def serialPortThread(serialPortDeviceName, serialPort):
                     mqttTopic = "huis/ADL3000/ADL3000-power-meter/power"
                     mqtt_publish.single(mqttTopic, json.dumps(sensorData, separators=(', ', ':')), hostname=settings.MQTT_ServerIP, retain=True)
 
-
             # Check if there is any message to send
             if not sendQueue.empty():
-                serialPort.setRTS(1) # Enable RS485 send
+                _serialPort.setRTS(1)  # Enable RS485 send
                 sendMsg = sendQueue.get_nowait()
                 msgLen = len(sendMsg)
                 # print(("SendMsg: %s" % sendMsg))
                 # printHexByteString(sendMsg)
-                serialPort.write(sendMsg)
+                _serialPort.write(sendMsg)
                 # 9600 baud->1bit=104,1667uS
                 # 1 byte=10bits->10*104,1667=1041,667uS
                 usleep(msgLen * 1041.6667)
                 # msleep(8)
 
-                serialPort.setRTS(0) # Disable RS485 send
+                _serialPort.setRTS(0)  # Disable RS485 send
                 # print("Tx ready")
 
         # In case the message contains unusual data
@@ -381,12 +382,12 @@ client.loop_start()
 time.sleep(2)
 
 try:
-    while not exit:
-        time.sleep(5) #[5s]
+    while not exitThread:
+        time.sleep(5)  # [5s]
 
 finally:
     if serialPort is not None:
-        serialPort.setRTS(0) # Disable RS485 send
+        serialPort.setRTS(0)  # Disable RS485 send
         closeSerialPort(serialPort)
         print('Closed serial port')
 

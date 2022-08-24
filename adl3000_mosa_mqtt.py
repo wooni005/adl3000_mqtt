@@ -5,14 +5,12 @@ from logging import debug
 import os
 import signal
 import time
-import serial
 import _thread
 import traceback
 import json
 import paho.mqtt.publish as mqtt_publish
 import paho.mqtt.client as mqtt_client
 import socket
-import fcntl
 import errno
 import struct
 
@@ -22,43 +20,45 @@ import serviceReport
 import settings
 import modbus
 
-current_sec_time = lambda: int(round(time.time()))
-current_milli_time = lambda: int(round(time.time() * 1000))
 oldTimeout = 0
+exitThread = False
 
-exit = False
+
+def current_sec_time():
+    return int(round(time.time()))
+
+
+def current_milli_time():
+    return int(round(time.time() * 1000))
 
 
 def signal_handler(_signal, frame):
-    global exit
+    global exitThread
 
     print('You pressed Ctrl+C!')
-    exit = True
+    exitThread = True
 
 
 # The callback for when the client receives a CONNACK response from the server.
-def on_connect(client, userdata, flags, rc):
+def on_connect(_client, userdata, flags, rc):
     if rc == 0:
         print("MQTT Client connected successfully")
         # client.subscribe([(settings.MQTT_TOPIC_OUT, 1), (settings.MQTT_TOPIC_CHECK, 1)])
-        client.subscribe([(settings.MQTT_TOPIC_CHECK, 1)])
+        _client.subscribe([(settings.MQTT_TOPIC_CHECK, 1)])
     else:
         print(("ERROR: MQTT Client connected with result code %s " % str(rc)))
 
 
-# The callback for when a PUBLISH message is received from the server
-def on_message(client, userdata, msg):
+# The callback for when a published message is received from the server
+def on_message(_client, userdata, msg):
     print(('ERROR: Received ' + msg.topic + ' in on_message function' + str(msg.payload)))
 
 
 def communicationThread():
-    global sensorData
     global oldTimeout
-    global serialPort
-    global exit
+    global exitThread
 
     oldTimeout = current_sec_time()
-    serialPort = {}
     powerCntAdd = 1000
     powerAvgAdd = 0
     powerAvgSend = 0
@@ -83,30 +83,30 @@ def communicationThread():
             else:
                 # a "real" error occurred
                 print(e)
-                exit = True
+                exitThread = True
         else:
             try:
                 msgLen = len(recvMsg)
                 # print("Received msgLen: %d msg: " % msgLen) #, end='')
         
                 if msgLen == 8:
-                    pass #Ignore msg
+                    pass  # Ignore msg
                     # Register get request from Storion to ADL3000
                     # print(" 8: ", end='')
                 elif msgLen == 21:
-                    pass # Ignore msg
+                    pass  # Ignore msg
                 else:
                     #  Check the ADL3000 Rx timeout
                     if (current_sec_time() - oldTimeout) > 300:
                         # Reset the RFLink Rx timeout timer
                         oldTimeout = current_sec_time()
 
-                        #Report failure to Home Logic system check
+                        # Report failure to Home Logic system check
                         serviceReport.sendFailureToHomeLogic(serviceReport.ACTION_RESTART, 'ADL3000 receive timeout (5 min no data received)!')
 
                     # Answer from ADL3000
                     oldTimeout = current_sec_time()
-                    if msgLen == 51: #ADL 3000
+                    if msgLen == 51:  # ADL 3000
                         pass
                         # print("51", end='')
                     else:
@@ -114,7 +114,7 @@ def communicationThread():
                         print("Unknown msgLength (msgLen=%d): " % msgLen, end='')
                         continue
 
-                    # Check the receive msg CRC
+                    # Check the received msg CRC
                     if not modbus.checkRecvMsgCRC(recvMsg):
                         print("Wrong CRC!")
                         continue
@@ -177,7 +177,7 @@ def communicationThread():
 
                     # 0x6A:21+22: 2 bytes: total active power (0.00kW)
                     i = 21
-                    powerTotal = float(struct.unpack(">h", recvMsg[i:i + 2])[0]) #
+                    powerTotal = float(struct.unpack(">h", recvMsg[i:i + 2])[0])
                     # print("Ptot: %d W  " % powerTotal)
 
                     sensorData['Ptot'] = powerTotal
@@ -186,7 +186,7 @@ def communicationThread():
                     powerAvgAdd += powerTotal
                     powerCntAdd += 1
                     powerAvg = powerAvgAdd / powerCntAdd
-                    powerAvgDiff = abs(powerAvg / 2) # 25% of powerTotal
+                    powerAvgDiff = abs(powerAvg / 2)  # 25% of powerTotal
                     # print("powerAvgDiff: %d" % powerAvgDiff)
                     if (feedInMode != lastFeedInMode) or (powerCntAdd >= 7) or (powerTotal > (powerAvg + powerAvgDiff)) or (powerTotal < (powerAvg - powerAvgDiff)):
                         powerAvgSend = powerAvg
@@ -256,7 +256,7 @@ def print_time(delay):
 ###
 # Initalisation ####
 ###
-# logger.initLogger(settings.LOG_FILENAME)
+logger.initLogger(settings.LOG_FILENAME)
 
 # Init signal handler, because otherwise Ctrl-C does not work
 signal.signal(signal.SIGINT, signal_handler)
@@ -290,7 +290,7 @@ except Exception:
 # manual interface.
 
 
-while not exit:
+while not exitThread:
     time.sleep(1)  # 60s
 
 # if serialPort is not None:
